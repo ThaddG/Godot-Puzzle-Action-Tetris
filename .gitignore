@@ -1,0 +1,29 @@
+# Godot 4+ specific ignores
+.godot/
+
+# Mono/C# specific (if you use C#)
+.mono/
+data_*/
+mono_crash.*.json
+
+# System/Editor
+.DS_Store
+*~
+*.swp
+
+# Export templates and builds
+/export/
+/build/
+*.exe
+*.x86_64
+*.apk
+*.aab
+*.ipa
+
+# IDE specific
+.vscode/
+.idea/
+
+# Backup files
+*.backup
+*.bak
