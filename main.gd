@@ -57,6 +57,11 @@ var score = 0
 var lines_cleared = 0
 var total_damage = 0
 
+# Combo system (for gravity chain reactions)
+var current_combo = 0  # Current chain count (resets when no more clears)
+var combo_multiplier = 1  # Damage multiplier based on combo
+var is_chain_active = false  # True while processing gravity chains
+
 # Battle system
 var enemy_health = 100
 var enemy_max_health = 100
@@ -77,6 +82,8 @@ var is_paused = false
 @onready var score_label = $TetrisArea/ScoreLabel
 @onready var lines_label = $TetrisArea/LinesLabel
 @onready var damage_label = $TetrisArea/DamageLabel
+@onready var combo_label = $TetrisArea/ComboLabel
+@onready var combo_multiplier_label = $TetrisArea/ComboContainer/ComboMultiplier
 @onready var enemy_health_bar = $BattleArea/Enemy/EnemyHealthBar
 @onready var game_timer = $GameTimer
 @onready var enemy_attack_timer = $EnemyAttackTimer
@@ -322,7 +329,7 @@ func hard_drop():
 # ============================================
 
 func lock_piece():
-	"""Locks the current piece into the grid and checks for line clears."""
+	"""Locks the current piece into the grid and starts the chain reaction."""
 	var color = PIECE_COLORS[current_piece_type]
 	
 	# Add each block to the grid
@@ -334,23 +341,23 @@ func lock_piece():
 	# Update grid visuals
 	update_grid_visuals()
 	
-	# Check for completed lines
-	var cleared = clear_completed_lines()
+	# Start the chain reaction process
+	# Reset combo at the start of each piece placement
+	current_combo = 0
+	combo_multiplier = 1
+	is_chain_active = true
 	
-	if cleared > 0:
-		# Calculate score and damage
-		var points = calculate_score(cleared)
-		var damage = calculate_damage(cleared)
-		
-		score += points
-		lines_cleared += cleared
-		total_damage += damage
-		
-		# Deal damage to enemy
-		deal_damage_to_enemy(damage)
-		
-		# Visual feedback for line clear
-		play_line_clear_effect()
+	# Process chains (this will keep going until no more lines clear)
+	await process_gravity_chain()
+	
+	# Chain is done
+	is_chain_active = false
+	
+	# Hide combo display after chain ends
+	await get_tree().create_timer(0.5).timeout
+	if current_combo == 0 or not is_chain_active:
+		combo_label.text = ""
+		combo_multiplier_label.text = ""
 	
 	# Update UI
 	update_ui()
@@ -359,8 +366,65 @@ func lock_piece():
 	spawn_new_piece()
 
 
-func clear_completed_lines() -> int:
-	"""Checks for and clears completed lines. Returns number of lines cleared."""
+func process_gravity_chain():
+	"""Processes gravity and line clears in a chain until no more clears happen."""
+	var chain_continues = true
+	
+	while chain_continues:
+		# First, check for and clear completed lines
+		var cleared = find_and_clear_lines()
+		
+		if cleared > 0:
+			# Increment combo
+			current_combo += 1
+			combo_multiplier = int(pow(2, current_combo - 1))  # x1, x2, x4, x8, x16...
+			
+			# Update combo display
+			update_combo_display(cleared)
+			
+			# Calculate score and damage with combo multiplier
+			var base_points = calculate_score(cleared)
+			var base_damage = calculate_damage(cleared)
+			
+			var combo_points = base_points * combo_multiplier
+			var combo_damage = base_damage * combo_multiplier
+			
+			score += combo_points
+			lines_cleared += cleared
+			total_damage += combo_damage
+			
+			# Deal damage to enemy
+			deal_damage_to_enemy(combo_damage)
+			
+			# Visual feedback
+			play_line_clear_effect()
+			if current_combo > 1:
+				play_combo_effect()
+			
+			# Update UI during chain
+			update_ui()
+			
+			# Wait a moment for visual effect
+			await get_tree().create_timer(0.3).timeout
+			
+			# Apply gravity - blocks fall into empty spaces
+			var blocks_fell = apply_gravity()
+			
+			if blocks_fell:
+				# Wait for gravity animation
+				await get_tree().create_timer(0.2).timeout
+				# Continue the loop to check for new line clears
+				chain_continues = true
+			else:
+				# No blocks fell, chain ends
+				chain_continues = false
+		else:
+			# No lines cleared, chain ends
+			chain_continues = false
+
+
+func find_and_clear_lines() -> int:
+	"""Finds completed lines, clears them (without shifting), returns count."""
 	var lines_to_clear = []
 	
 	# Check each row from bottom to top
@@ -374,22 +438,85 @@ func clear_completed_lines() -> int:
 		if is_complete:
 			lines_to_clear.append(y)
 	
-	# Clear the lines
+	# Clear the lines (set to null, don't shift yet - gravity will handle that)
 	for y in lines_to_clear:
-		# Move all rows above down by one
-		for row in range(y, 0, -1):
-			for x in range(GRID_WIDTH):
-				grid[row][x] = grid[row - 1][x]
-		
-		# Clear top row
 		for x in range(GRID_WIDTH):
-			grid[0][x] = null
+			grid[y][x] = null
 	
 	# Update visuals after clearing
 	if lines_to_clear.size() > 0:
 		update_grid_visuals()
 	
 	return lines_to_clear.size()
+
+
+func apply_gravity() -> bool:
+	"""Makes all floating blocks fall down. Returns true if any blocks moved."""
+	var blocks_moved = false
+	
+	# Process from bottom to top, for each column
+	for x in range(GRID_WIDTH):
+		# Find the lowest empty spot and drop blocks into it
+		var write_y = GRID_HEIGHT - 1  # Start at bottom
+		
+		# Go from bottom to top
+		for read_y in range(GRID_HEIGHT - 1, -1, -1):
+			if grid[read_y][x] != null:
+				# There's a block here
+				if read_y != write_y:
+					# Move it down to the write position
+					grid[write_y][x] = grid[read_y][x]
+					grid[read_y][x] = null
+					blocks_moved = true
+				write_y -= 1  # Move write position up
+	
+	# Update visuals after gravity
+	if blocks_moved:
+		update_grid_visuals()
+	
+	return blocks_moved
+
+
+func update_combo_display(lines: int):
+	"""Updates the combo display during a chain."""
+	if current_combo == 1:
+		combo_label.text = str(lines) + " LINE" + ("S" if lines > 1 else "") + "!"
+		combo_multiplier_label.text = ""
+	else:
+		combo_label.text = "CHAIN x" + str(current_combo) + "!"
+		combo_multiplier_label.text = "x" + str(combo_multiplier)
+		
+		# Make combo text pulse with color based on combo level
+		var combo_color = Color(1, 1, 1)  # White default
+		if current_combo >= 5:
+			combo_color = Color(1, 0, 1)  # Magenta for huge combos
+		elif current_combo >= 4:
+			combo_color = Color(1, 0, 0)  # Red
+		elif current_combo >= 3:
+			combo_color = Color(1, 0.5, 0)  # Orange
+		elif current_combo >= 2:
+			combo_color = Color(1, 1, 0)  # Yellow
+		
+		combo_label.modulate = combo_color
+
+
+func play_combo_effect():
+	"""Visual effect for combos."""
+	# Scale up the combo label
+	var tween = create_tween()
+	combo_multiplier_label.scale = Vector2(1.5, 1.5)
+	tween.tween_property(combo_multiplier_label, "scale", Vector2(1, 1), 0.2)
+	
+	# Flash the grid with combo color
+	var grid_bg = $TetrisArea/GridContainer/GridBackground
+	var flash_tween = create_tween()
+	var flash_color = Color(0.5, 0.3, 0.1) if current_combo >= 3 else Color(0.3, 0.3, 0.1)
+	flash_tween.tween_property(grid_bg, "color", flash_color, 0.1)
+	flash_tween.tween_property(grid_bg, "color", Color(0.02, 0.02, 0.05), 0.1)
+
+
+# NOTE: clear_completed_lines has been replaced by find_and_clear_lines + apply_gravity
+# The new gravity system handles line clearing with chain combos
 
 
 func update_grid_visuals():
