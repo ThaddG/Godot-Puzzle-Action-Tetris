@@ -72,6 +72,11 @@ var enemy_attack_phase = false  # True when enemy is attacking
 var game_over = false
 var is_paused = false
 
+# Soft drop (hold to fast drop)
+var is_soft_dropping = false  # True when player is holding down
+const SOFT_DROP_SPEED = 0.05  # How fast pieces fall when holding (very fast!)
+const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
+
 # Node references (we'll get these in _ready)
 @onready var grid_container = $TetrisArea/GridContainer
 @onready var score_label = $TetrisArea/ScoreLabel
@@ -83,6 +88,7 @@ var is_paused = false
 @onready var turn_timer = $TurnTimer
 @onready var turn_timer_bar = $BattleArea/TurnTimerContainer/TurnTimerBar
 @onready var turn_label = $BattleArea/TurnTimerContainer/TurnLabel
+@onready var fast_drop_timer = $FastDropTimer
 
 # These will hold the visual blocks we create
 var grid_blocks = []  # 2D array of ColorRect nodes for placed blocks
@@ -111,6 +117,7 @@ func _ready():
 	game_timer.timeout.connect(_on_game_timer_timeout)
 	enemy_attack_timer.timeout.connect(_on_enemy_attack_timer_timeout)
 	turn_timer.timeout.connect(_on_turn_timer_timeout)
+	fast_drop_timer.timeout.connect(_on_fast_drop_timer_timeout)
 	
 	# Initialize turn system
 	start_player_turn()
@@ -154,6 +161,11 @@ func connect_buttons():
 	$UI/TouchControls/RightButton.pressed.connect(_on_right_pressed)
 	$UI/TouchControls/RotateButton.pressed.connect(_on_rotate_pressed)
 	$UI/TouchControls/DropButton.pressed.connect(_on_drop_pressed)
+	
+	# Soft drop button - detect press AND release
+	var soft_drop_btn = $UI/TouchControls/SoftDropButton
+	soft_drop_btn.button_down.connect(_on_soft_drop_pressed)
+	soft_drop_btn.button_up.connect(_on_soft_drop_released)
 
 
 # ============================================
@@ -637,6 +649,40 @@ func _on_drop_pressed():
 	hard_drop()
 
 
+func _on_soft_drop_pressed():
+	"""Called when soft drop button is pressed down."""
+	if game_over or not is_player_turn:
+		return
+	is_soft_dropping = true
+	fast_drop_timer.start()
+	# Also move down immediately
+	soft_drop_step()
+
+
+func _on_soft_drop_released():
+	"""Called when soft drop button is released."""
+	is_soft_dropping = false
+	fast_drop_timer.stop()
+
+
+func _on_fast_drop_timer_timeout():
+	"""Called rapidly while holding soft drop - moves piece down fast."""
+	if is_soft_dropping and is_player_turn and not game_over:
+		soft_drop_step()
+
+
+func soft_drop_step():
+	"""Move the piece down one step during soft drop."""
+	if can_move_to(current_piece_position + Vector2(0, 1)):
+		current_piece_position.y += 1
+		update_current_piece_visuals()
+	else:
+		# Hit bottom, lock the piece
+		is_soft_dropping = false
+		fast_drop_timer.stop()
+		lock_piece()
+
+
 func _input(event):
 	"""Handles keyboard input (for testing on desktop)."""
 	if game_over:
@@ -649,6 +695,10 @@ func _input(event):
 	elif event.is_action_pressed("ui_up"):
 		rotate_piece()
 	elif event.is_action_pressed("ui_down"):
-		move_piece(Vector2(0, 1))
+		# Start soft drop when down is pressed
+		_on_soft_drop_pressed()
+	elif event.is_action_released("ui_down"):
+		# Stop soft drop when down is released
+		_on_soft_drop_released()
 	elif event.is_action_pressed("ui_accept"):  # Space or Enter
 		hard_drop()
