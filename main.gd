@@ -388,6 +388,11 @@ func lock_piece():
 		return
 	is_locking_piece = true
 	
+	# IMMEDIATELY clear the falling piece visuals so they don't ghost
+	for block in current_piece_visuals:
+		block.queue_free()
+	current_piece_visuals.clear()
+	
 	var color = PIECE_COLORS[current_piece_type]
 	
 	# Add each block to the grid
