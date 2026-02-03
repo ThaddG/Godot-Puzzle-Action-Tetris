@@ -76,6 +76,7 @@ var enemy_attack_phase = false  # True when enemy is attacking
 # Game state
 var game_over = false
 var is_paused = false
+var is_locking_piece = false  # Prevents race condition during async lock_piece
 
 # Soft drop (hold to fast drop)
 var is_soft_dropping = false  # True when player is holding down
@@ -130,8 +131,16 @@ func _ready():
 	start_player_turn()
 	
 	# Spawn the first piece
-	next_piece_type = get_random_piece_type()
-	spawn_new_piece()
+	# We need TWO pieces ready: one to spawn now, one to show in preview
+	var first_piece = get_random_piece_type()
+	next_piece_type = get_random_piece_type()  # This will show in preview
+	
+	# Manually set up the first piece (don't use spawn_new_piece which would regenerate next)
+	current_piece_type = first_piece
+	current_piece_blocks = TETROMINOS[current_piece_type].duplicate()
+	current_piece_position = Vector2(4, 0)
+	update_current_piece_visuals()
+	update_next_piece_preview()
 	
 	# Update the UI
 	update_ui()
@@ -279,7 +288,7 @@ func can_move_to(new_position: Vector2) -> bool:
 
 func move_piece(direction: Vector2):
 	"""Attempts to move the piece in a direction."""
-	if game_over or not is_player_turn:
+	if game_over or not is_player_turn or is_locking_piece:
 		return
 	
 	var new_pos = current_piece_position + direction
@@ -290,7 +299,7 @@ func move_piece(direction: Vector2):
 
 func rotate_piece():
 	"""Rotates the current piece 90 degrees clockwise."""
-	if game_over or not is_player_turn:
+	if game_over or not is_player_turn or is_locking_piece:
 		return
 	
 	# O piece doesn't rotate
@@ -327,7 +336,7 @@ func rotate_piece():
 
 func hard_drop():
 	"""Instantly drops the piece to the bottom."""
-	if game_over or not is_player_turn:
+	if game_over or not is_player_turn or is_locking_piece:
 		return
 	
 	while can_move_to(current_piece_position + Vector2(0, 1)):
@@ -342,6 +351,11 @@ func hard_drop():
 
 func lock_piece():
 	"""Locks the current piece into the grid and starts the chain reaction."""
+	# Prevent multiple calls while async operations are running
+	if is_locking_piece:
+		return
+	is_locking_piece = true
+	
 	var color = PIECE_COLORS[current_piece_type]
 	
 	# Add each block to the grid
@@ -376,6 +390,9 @@ func lock_piece():
 	
 	# Spawn next piece
 	spawn_new_piece()
+	
+	# Allow lock_piece to be called again
+	is_locking_piece = false
 
 
 func process_gravity_chain():
@@ -652,7 +669,7 @@ func update_ui():
 
 func _on_game_timer_timeout():
 	"""Called every tick - moves piece down automatically."""
-	if game_over or is_paused or not is_player_turn:
+	if game_over or is_paused or not is_player_turn or is_locking_piece:
 		return
 	
 	# Try to move down
@@ -790,7 +807,7 @@ func _on_drop_pressed():
 
 func _on_soft_drop_pressed():
 	"""Called when soft drop button is pressed down."""
-	if game_over or not is_player_turn:
+	if game_over or not is_player_turn or is_locking_piece:
 		return
 	is_soft_dropping = true
 	fast_drop_timer.start()
@@ -806,7 +823,7 @@ func _on_soft_drop_released():
 
 func _on_fast_drop_timer_timeout():
 	"""Called rapidly while holding soft drop - moves piece down fast."""
-	if is_soft_dropping and is_player_turn and not game_over:
+	if is_soft_dropping and is_player_turn and not game_over and not is_locking_piece:
 		soft_drop_step()
 
 
