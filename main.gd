@@ -579,14 +579,26 @@ func deal_damage_to_enemy(damage: int):
 
 
 func enemy_defeated():
-	"""Called when the enemy is defeated."""
-	print("Enemy defeated!")
-	# You could spawn a new enemy, show victory screen, etc.
-	# For now, let's reset the enemy with more health
-	enemy_max_health += 50
-	enemy_health = enemy_max_health
-	enemy_health_bar.max_value = enemy_max_health
-	enemy_health_bar.value = enemy_health
+	"""Called when the enemy is defeated - VICTORY!"""
+	game_over = true
+	print("VICTORY! Enemy defeated!")
+	
+	# Stop all timers
+	game_timer.stop()
+	turn_timer.stop()
+	fast_drop_timer.stop()
+	
+	# Update turn label to show victory
+	turn_label.text = "VICTORY!"
+	turn_timer_bar.value = turn_timer_bar.max_value
+	turn_timer_bar.modulate = Color(1, 0.84, 0)  # Gold color
+	
+	# Victory animation - flash enemy red then fade out
+	var enemy_rect = $BattleArea/Enemy/EnemyPlaceholder
+	var tween = create_tween()
+	tween.tween_property(enemy_rect, "color", Color(1, 1, 1), 0.1)
+	tween.tween_property(enemy_rect, "color", Color(0.5, 0, 0), 0.2)
+	tween.tween_property(enemy_rect, "modulate:a", 0.0, 0.5)  # Fade out
 
 
 # ============================================
