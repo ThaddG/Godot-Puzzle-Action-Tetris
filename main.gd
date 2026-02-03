@@ -97,6 +97,7 @@ const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 @onready var turn_timer_bar = $BattleArea/TurnTimerContainer/TurnTimerBar
 @onready var turn_label = $BattleArea/TurnTimerContainer/TurnLabel
 @onready var fast_drop_timer = $FastDropTimer
+@onready var pause_overlay = $UI/PauseOverlay
 
 # These will hold the visual blocks we create
 var grid_blocks = []  # 2D array of ColorRect nodes for placed blocks
@@ -182,6 +183,10 @@ func connect_buttons():
 	var soft_drop_btn = $UI/TouchControls/SoftDropButton
 	soft_drop_btn.button_down.connect(_on_soft_drop_pressed)
 	soft_drop_btn.button_up.connect(_on_soft_drop_released)
+	
+	# Pause buttons
+	$UI/TouchControls/PauseButton.pressed.connect(toggle_pause)
+	$UI/PauseOverlay/ResumeButton.pressed.connect(toggle_pause)
 
 
 # ============================================
@@ -335,13 +340,40 @@ func rotate_piece():
 
 
 func hard_drop():
-	"""Instantly drops the piece to the bottom."""
+	"""Drops the piece to the bottom with a quick slide animation."""
 	if game_over or not is_player_turn or is_locking_piece:
 		return
 	
-	while can_move_to(current_piece_position + Vector2(0, 1)):
-		current_piece_position.y += 1
+	# Calculate the final position
+	var final_y = current_piece_position.y
+	while can_move_to(Vector2(current_piece_position.x, final_y + 1)):
+		final_y += 1
 	
+	# If already at bottom, just lock
+	if final_y == current_piece_position.y:
+		lock_piece()
+		return
+	
+	# Animate the drop with a quick slide
+	is_locking_piece = true  # Prevent input during animation
+	var drop_distance = final_y - current_piece_position.y
+	var drop_time = min(0.08, drop_distance * 0.008)  # Faster slide, max 0.08 seconds
+	
+	# Animate each block sliding down
+	var start_y = current_piece_position.y
+	var tween = create_tween()
+	tween.tween_method(
+		func(y): 
+			current_piece_position.y = y
+			update_current_piece_visuals(),
+		start_y,
+		final_y,
+		drop_time
+	)
+	
+	# Wait for animation to complete, then lock
+	await tween.finished
+	is_locking_piece = false
 	lock_piece()
 
 
@@ -841,7 +873,12 @@ func soft_drop_step():
 
 func _input(event):
 	"""Handles keyboard input (for testing on desktop)."""
-	if game_over:
+	# Pause can be toggled even during game over to dismiss
+	if event.is_action_pressed("ui_cancel"):  # Escape key
+		toggle_pause()
+		return
+	
+	if game_over or is_paused:
 		return
 	
 	if event.is_action_pressed("ui_left"):
@@ -858,3 +895,32 @@ func _input(event):
 		_on_soft_drop_released()
 	elif event.is_action_pressed("ui_accept"):  # Space or Enter
 		hard_drop()
+
+
+func toggle_pause():
+	"""Toggles the pause state of the game."""
+	if game_over:
+		return
+	
+	is_paused = !is_paused
+	
+	if is_paused:
+		# Pause the game
+		game_timer.paused = true
+		turn_timer.paused = true
+		fast_drop_timer.stop()
+		is_soft_dropping = false
+		
+		# Show pause overlay
+		pause_overlay.visible = true
+		
+		print("Game paused")
+	else:
+		# Resume the game
+		game_timer.paused = false
+		turn_timer.paused = false
+		
+		# Hide pause overlay
+		pause_overlay.visible = false
+		
+		print("Game resumed")
