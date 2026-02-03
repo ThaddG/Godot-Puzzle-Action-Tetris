@@ -227,11 +227,22 @@ offset_left = 620.0
 offset_top = 1100.0
 offset_right = 700.0
 offset_bottom = 1180.0
-text = "↓"
+text = "⬇"
+
+[node name="SoftDropButton" type="Button" parent="UI/TouchControls"]
+layout_mode = 0
+offset_left = 280.0
+offset_top = 1100.0
+offset_right = 460.0
+offset_bottom = 1180.0
+text = "HOLD ↓"
 
 [node name="GameTimer" type="Timer" parent="."]
 wait_time = 0.5
 autostart = true
+
+[node name="FastDropTimer" type="Timer" parent="."]
+wait_time = 0.05
 
 [node name="EnemyAttackTimer" type="Timer" parent="."]
 wait_time = 3.0
