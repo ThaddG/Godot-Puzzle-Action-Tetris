@@ -67,7 +67,7 @@ var enemy_health = 100
 var enemy_max_health = 100
 var player_health = 100
 
-# Phase 1: Combat feedback systems
+# Phase 1: Combat feedback systems (Damage feed + Segmented health bar)
 var health_segments = []  # Array of ColorRect segments
 var damage_feed_entries = []  # Array of feed messages
 const MAX_FEED_ENTRIES = 8
@@ -76,10 +76,19 @@ var game_time = 0.0
 # Circular timer progress
 var timer_progress_color = Color(0.3, 1, 0.3)  # Current timer color
 
-# Phase 2: Screen shake and floating damage
+# Phase 2: Screen shake and floating damage numbers
 var shake_amount = 0.0
 var shake_decay = 3.0  # How fast shake reduces (lower = lingers longer)
 var camera_original_offset = Vector2(360, 640)
+
+# Phase 3: Hit flash and persistent combo counter
+var combo_counter_label = null  # Persistent combo counter UI
+
+# Phase 4: Victory/danger indicators and game over screen
+var danger_overlay = null  # Red overlay for low health
+var max_combo_achieved = 0  # Track highest combo for game over screen
+var game_over_screen = null  # Game over UI container
+var victory_particles = null  # Particles for victory celebration
 
 # Turn-based system
 var is_player_turn = true
@@ -168,9 +177,16 @@ func _ready():
 	# Phase 1: Create segmented health bar
 	create_segmented_health_bar()
 
+	# Phase 3: Create persistent combo counter
+	create_combo_counter()
+
+	# Phase 4: Create danger overlay and game over screen
+	create_danger_overlay()
+	create_game_over_screen()
+	create_victory_particles()
+
 	# Connect circular progress drawing
 	circular_progress.draw.connect(_draw_circular_timer)
-
 
 func _process(delta):
 	"""Track game time and update game state."""
@@ -186,6 +202,9 @@ func _process(delta):
 		)
 	else:
 		camera.offset = camera_original_offset
+
+	# Phase 4: Update danger overlay based on player health
+	update_danger_overlay()
 
 
 func initialize_grid():
@@ -488,6 +507,9 @@ func lock_piece():
 	current_combo = 0
 	combo_multiplier = 1
 	is_chain_active = true
+
+	# Phase 3: Reset combo counter display
+	update_combo_counter()
 	
 	# Process chains (this will keep going until no more lines clear)
 	await process_gravity_chain()
@@ -523,9 +545,15 @@ func process_gravity_chain():
 			# Increment combo
 			current_combo += 1
 			combo_multiplier = int(pow(2, current_combo - 1))  # x1, x2, x4, x8, x16...
-			
+
+			# Phase 4: Track max combo
+			max_combo_achieved = max(max_combo_achieved, current_combo)
+
 			# Update combo display
 			update_combo_display(cleared)
+
+			# Phase 3: Update persistent combo counter
+			update_combo_counter()
 			
 			# Calculate score and damage with combo multiplier
 			var base_points = calculate_score(cleared)
@@ -725,6 +753,9 @@ func deal_damage_to_enemy(damage: int):
 	var enemy_pos = $BattleArea/Enemy.position
 	spawn_floating_damage_number(damage, enemy_pos, is_combo)
 
+	# Phase 3: Hit flash effect on enemy
+	flash_sprite($BattleArea/Enemy, Color(3, 3, 3), 0.15)
+
 	# Existing logic
 	enemy_health_bar.value = enemy_health
 	play_attack_animation()
@@ -760,6 +791,10 @@ func enemy_defeated():
 	tween.tween_property(enemy_rect, "color", Color(1, 1, 1), 0.1)
 	tween.tween_property(enemy_rect, "color", Color(0.5, 0, 0), 0.2)
 	tween.tween_property(enemy_rect, "modulate:a", 0.0, 0.5)  # Fade out
+
+	# Phase 4: Show victory screen after animation
+	await tween.finished
+	show_game_over_screen(true)
 
 
 # ============================================
@@ -858,6 +893,358 @@ func draw_arc_custom(control: Control, center: Vector2, radius: float, start_ang
 func add_screen_shake(intensity: float):
 	"""Adds screen shake with the given intensity."""
 	shake_amount = min(shake_amount + intensity, 20.0)  # Cap at 20 pixels
+
+
+# ============================================
+# PHASE 3: HIT FLASH & COMBO COUNTER
+# ============================================
+
+func flash_sprite(sprite: Node2D, flash_color: Color = Color(3, 3, 3), duration: float = 0.15):
+	"""Flashes a sprite with the given color briefly."""
+	# Find the ColorRect child (the visual placeholder)
+	var placeholder = null
+	for child in sprite.get_children():
+		if child is ColorRect:
+			placeholder = child
+			break
+
+	if placeholder == null:
+		return
+
+	# Store original color
+	var original_color = placeholder.color
+
+	# Flash animation: brighten then return to normal
+	var tween = create_tween()
+	tween.tween_property(placeholder, "modulate", flash_color, duration / 2)
+	tween.tween_property(placeholder, "modulate", Color(1, 1, 1), duration / 2)
+
+
+func create_combo_counter():
+	"""Creates a persistent combo counter display."""
+	# Create label for combo counter
+	combo_counter_label = Label.new()
+	combo_counter_label.text = "Combo: x0"
+	combo_counter_label.add_theme_font_size_override("font_size", 20)
+	combo_counter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	combo_counter_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	combo_counter_label.modulate = Color(1, 1, 1, 0)  # Start invisible
+
+	# Position at top-center of battle area
+	combo_counter_label.position = Vector2(260, 10)
+	combo_counter_label.size = Vector2(200, 40)
+
+	# Add to BattleArea
+	$BattleArea.add_child(combo_counter_label)
+
+
+func update_combo_counter():
+	"""Updates the persistent combo counter display."""
+	if combo_counter_label == null:
+		return
+
+	if current_combo > 1:
+		# Show combo counter with scaling effect
+		combo_counter_label.text = "Combo: x%d" % current_combo
+
+		# Color based on combo level
+		var combo_color = Color(1, 1, 1)  # White default
+		if current_combo >= 5:
+			combo_color = Color(1, 0.3, 1)  # Magenta for huge combos
+		elif current_combo >= 4:
+			combo_color = Color(1, 0.2, 0.2)  # Red
+		elif current_combo >= 3:
+			combo_color = Color(1, 0.5, 0)  # Orange
+		elif current_combo >= 2:
+			combo_color = Color(1, 1, 0)  # Yellow
+
+		combo_counter_label.modulate = combo_color
+
+		# Pulse effect when combo increases
+		var tween = create_tween()
+		tween.tween_property(combo_counter_label, "scale", Vector2(1.3, 1.3), 0.1)
+		tween.tween_property(combo_counter_label, "scale", Vector2(1, 1), 0.1)
+	else:
+		# Hide combo counter with fade out
+		var tween = create_tween()
+		tween.tween_property(combo_counter_label, "modulate:a", 0.0, 0.3)
+
+
+# ============================================
+# PHASE 4: VICTORY/DANGER INDICATORS & GAME OVER
+# ============================================
+
+func create_danger_overlay():
+	"""Creates a red overlay that pulses when player health is low."""
+	danger_overlay = ColorRect.new()
+	danger_overlay.color = Color(1, 0, 0, 0)  # Start invisible
+	danger_overlay.size = Vector2(720, 1280)
+	danger_overlay.z_index = 50  # Below UI but above game
+	danger_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Don't block input
+	add_child(danger_overlay)
+
+
+func update_danger_overlay():
+	"""Updates the danger overlay based on player health."""
+	if danger_overlay == null or game_over:
+		return
+
+	var health_percent = float(player_health) / 100.0
+
+	if health_percent <= 0.25:  # Critical health (25% or less)
+		# Pulse red overlay
+		var pulse_intensity = 0.3 + 0.1 * sin(game_time * 4.0)  # Pulse between 0.2-0.4
+		danger_overlay.color.a = pulse_intensity
+	elif health_percent <= 0.5:  # Low health (50% or less)
+		# Subtle red tint
+		danger_overlay.color.a = 0.15
+	else:
+		# No danger
+		danger_overlay.color.a = 0.0
+
+
+func create_victory_particles():
+	"""Creates a particle system for victory celebration."""
+	victory_particles = CPUParticles2D.new()
+	victory_particles.emitting = false
+	victory_particles.amount = 150
+	victory_particles.lifetime = 4.0
+	victory_particles.one_shot = false
+	victory_particles.explosiveness = 0.0  # Continuous stream
+	
+	# Emit from top of screen line
+	victory_particles.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	victory_particles.emission_rect_extents = Vector2(360, 1)  # Full width
+	victory_particles.position = Vector2(360, -10)  # Top center
+	
+	# Fall down
+	victory_particles.direction = Vector2(0, 1)
+	victory_particles.spread = 0.0
+	victory_particles.gravity = Vector2(0, 300)
+	victory_particles.initial_velocity_min = 100
+	victory_particles.initial_velocity_max = 250
+	
+	# Appearance (confetti/coins)
+	victory_particles.scale_amount_min = 6.0
+	victory_particles.scale_amount_max = 12.0
+	victory_particles.color = Color(1, 0.84, 0)  # Gold
+	
+	# Color variation (gold to light yellow to orange)
+	var gradient = Gradient.new()
+	gradient.set_color(0, Color(1, 0.8, 0.1))
+	gradient.set_color(1, Color(1, 0.5, 0))
+	victory_particles.color_ramp = gradient
+	
+	# Rotation
+	victory_particles.angular_velocity_min = -180.0
+	victory_particles.angular_velocity_max = 180.0
+	
+	victory_particles.z_index = 101  # Above game over screen
+	$UI.add_child(victory_particles)
+
+
+func create_game_over_screen():
+	"""Creates the game over screen UI (hidden initially)."""
+	game_over_screen = Control.new()
+	game_over_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	game_over_screen.size = Vector2(720, 1280)
+	game_over_screen.visible = false
+	game_over_screen.z_index = 100  # Top layer
+	game_over_screen.mouse_filter = Control.MOUSE_FILTER_STOP  # Capture all mouse events
+
+	# Dark overlay (background decoration only, doesn't block input)
+	var overlay = ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.85)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Let clicks pass through
+	overlay.show_behind_parent = true
+	game_over_screen.add_child(overlay)
+
+	# Container for all text
+	var container = VBoxContainer.new()
+	container.name = "VBoxContainer"
+	container.position = Vector2(110, 300)
+	container.size = Vector2(500, 600)
+	container.add_theme_constant_override("separation", 20)
+	game_over_screen.add_child(container)
+
+	# Title label (will be set to VICTORY or DEFEAT)
+	var title = Label.new()
+	title.name = "Title"
+	title.add_theme_font_size_override("font_size", 64)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	container.add_child(title)
+
+	# Spacer
+	var spacer1 = Control.new()
+	spacer1.custom_minimum_size = Vector2(0, 30)
+	container.add_child(spacer1)
+
+	# Stats container
+	var stats = VBoxContainer.new()
+	stats.name = "VBoxContainer"
+	stats.add_theme_constant_override("separation", 15)
+	container.add_child(stats)
+
+	# Score
+	var score_label = Label.new()
+	score_label.name = "Score"
+	score_label.add_theme_font_size_override("font_size", 28)
+	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stats.add_child(score_label)
+
+	# Lines
+	var lines_label = Label.new()
+	lines_label.name = "Lines"
+	lines_label.add_theme_font_size_override("font_size", 24)
+	lines_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stats.add_child(lines_label)
+
+	# Damage
+	var damage_label = Label.new()
+	damage_label.name = "Damage"
+	damage_label.add_theme_font_size_override("font_size", 24)
+	damage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stats.add_child(damage_label)
+
+	# Max combo
+	var combo_label = Label.new()
+	combo_label.name = "MaxCombo"
+	combo_label.add_theme_font_size_override("font_size", 28)
+	combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	combo_label.modulate = Color(1, 0.8, 0)  # Gold color
+	stats.add_child(combo_label)
+
+	# Spacer
+	var spacer2 = Control.new()
+	spacer2.custom_minimum_size = Vector2(0, 40)
+	container.add_child(spacer2)
+
+	# Restart button
+	var restart_btn = Button.new()
+	restart_btn.text = "↻ RESTART"
+	restart_btn.custom_minimum_size = Vector2(300, 80)
+	restart_btn.add_theme_font_size_override("font_size", 32)
+	restart_btn.focus_mode = Control.FOCUS_NONE
+	var center_container = CenterContainer.new()
+	center_container.add_child(restart_btn)
+	container.add_child(center_container)
+
+	# Connect restart button
+	restart_btn.pressed.connect(restart_game)
+
+	# Add to UI layer so it's on top of everything
+	$UI.add_child(game_over_screen)
+
+
+func show_game_over_screen(victory: bool):
+	"""Shows the game over screen with final stats."""
+	if game_over_screen == null:
+		return
+
+	# Set title and color based on victory/defeat
+	var title = game_over_screen.get_node("VBoxContainer/Title")
+	if victory:
+		title.text = "VICTORY!"
+		title.modulate = Color(1, 0.84, 0)  # Gold
+		victory_particles.emitting = true
+	else:
+		title.text = "DEFEAT"
+		title.modulate = Color(1, 0.3, 0.3)  # Red
+
+	# Update stats
+	game_over_screen.get_node("VBoxContainer/VBoxContainer/Score").text = "SCORE: %d" % score
+	game_over_screen.get_node("VBoxContainer/VBoxContainer/Lines").text = "Lines Cleared: %d" % lines_cleared
+	game_over_screen.get_node("VBoxContainer/VBoxContainer/Damage").text = "Total Damage: %d" % total_damage
+	game_over_screen.get_node("VBoxContainer/VBoxContainer/MaxCombo").text = "★ Max Combo: x%d ★" % max_combo_achieved
+
+	# Show with fade in
+	game_over_screen.modulate = Color(1, 1, 1, 0)
+	game_over_screen.visible = true
+	var tween = create_tween()
+	tween.tween_property(game_over_screen, "modulate:a", 1.0, 0.5)
+
+
+func restart_game():
+	"""Restarts the game from the beginning."""
+	# Reset all game state
+	score = 0
+	lines_cleared = 0
+	total_damage = 0
+	enemy_health = enemy_max_health
+	player_health = 100
+	current_combo = 0
+	combo_multiplier = 1
+	max_combo_achieved = 0
+	is_chain_active = false
+	game_over = false
+	is_paused = false
+	is_locking_piece = false
+	is_player_turn = true
+	turn_time_remaining = TURN_DURATION
+	shake_amount = 0.0
+
+	# Clear the grid
+	initialize_grid()
+	update_grid_visuals()
+
+	# Clear visual pieces
+	for block in current_piece_visuals:
+		block.queue_free()
+	current_piece_visuals.clear()
+
+	for block in ghost_piece_visuals:
+		block.queue_free()
+	ghost_piece_visuals.clear()
+
+	for block in next_piece_visuals:
+		block.queue_free()
+	next_piece_visuals.clear()
+
+	# Reset enemy health bar
+	enemy_health_bar.value = enemy_max_health
+	update_health_bar_color(enemy_max_health)
+
+	# Reset enemy appearance
+	var enemy_rect = $BattleArea/Enemy/EnemyPlaceholder
+	enemy_rect.color = Color(1, 0.2, 0.2)
+	enemy_rect.modulate = Color(1, 1, 1, 1)
+
+	# Clear damage feed
+	damage_feed_entries.clear()
+	update_damage_feed_display()
+
+	# Reset combo displays
+	combo_label.text = ""
+	combo_multiplier_label.text = ""
+	update_combo_counter()
+
+	# Reset turn timer
+	turn_label.text = "YOUR TURN"
+	timer_progress_color = Color(0.3, 1, 0.3)
+	timer_number.modulate = Color(0.3, 1, 0.3)
+	circular_progress.queue_redraw()
+
+	# Hide game over screen
+	game_over_screen.visible = false
+	victory_particles.emitting = false
+
+	# Spawn first piece
+	var first_piece = get_random_piece_type()
+	next_piece_type = get_random_piece_type()
+	current_piece_type = first_piece
+	current_piece_blocks = TETROMINOS[current_piece_type].duplicate()
+	current_piece_position = Vector2(4, 0)
+	update_current_piece_visuals()
+	update_next_piece_preview()
+
+	# Update UI
+	update_ui()
+
+	# Restart timers
+	start_player_turn()
+
+	print("Game restarted!")
 
 
 func spawn_floating_damage_number(damage: int, position: Vector2, is_combo: bool = false):
@@ -1043,9 +1430,12 @@ func _on_enemy_attack_timer_timeout():
 	var player_pos = $BattleArea/Player.position
 	spawn_floating_damage_number(enemy_damage, player_pos, false)
 
+	# Phase 3: Hit flash effect on player
+	flash_sprite($BattleArea/Player, Color(3, 1, 1), 0.15)  # Red-tinted flash for player damage
+
 	play_enemy_attack_animation()
 
-	# Flash player to show damage
+	# Flash player color to show damage (existing effect)
 	var player_rect = $BattleArea/Player/PlayerPlaceholder
 	var tween = create_tween()
 	tween.tween_property(player_rect, "color", Color(1, 0, 0), 0.1)
@@ -1058,6 +1448,11 @@ func _on_enemy_attack_timer_timeout():
 		print("Player defeated! GAME OVER!")
 		game_timer.stop()
 		turn_timer.stop()
+		fast_drop_timer.stop()
+
+		# Phase 4: Show defeat screen
+		await get_tree().create_timer(1.0).timeout
+		show_game_over_screen(false)
 	else:
 		# After enemy attacks, give turn back to player
 		start_player_turn()
