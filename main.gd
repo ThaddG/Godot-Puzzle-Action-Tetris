@@ -89,7 +89,6 @@ var danger_overlay = null  # Red overlay for low health
 var max_combo_achieved = 0  # Track highest combo for game over screen
 var game_over_screen = null  # Game over UI container
 var victory_particles = null  # Particles for victory celebration
-
 # Turn-based system
 var is_player_turn = true
 var turn_time_remaining = 30.0  # 30 seconds per turn
@@ -187,7 +186,6 @@ func _ready():
 
 	# Connect circular progress drawing
 	circular_progress.draw.connect(_draw_circular_timer)
-
 func _process(delta):
 	"""Track game time and update game state."""
 	if not game_over and not is_paused:
@@ -205,7 +203,6 @@ func _process(delta):
 
 	# Phase 4: Update danger overlay based on player health
 	update_danger_overlay()
-
 
 func initialize_grid():
 	"""Creates an empty grid (2D array of nulls)."""
