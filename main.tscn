@@ -203,6 +203,7 @@ offset_left = 20.0
 offset_top = 1100.0
 offset_right = 120.0
 offset_bottom = 1180.0
+focus_mode = 0
 text = "←"
 
 [node name="RightButton" type="Button" parent="UI/TouchControls"]
@@ -211,6 +212,7 @@ offset_left = 140.0
 offset_top = 1100.0
 offset_right = 240.0
 offset_bottom = 1180.0
+focus_mode = 0
 text = "→"
 
 [node name="RotateButton" type="Button" parent="UI/TouchControls"]
@@ -219,6 +221,7 @@ offset_left = 500.0
 offset_top = 1100.0
 offset_right = 600.0
 offset_bottom = 1180.0
+focus_mode = 0
 text = "↻"
 
 [node name="DropButton" type="Button" parent="UI/TouchControls"]
@@ -227,6 +230,7 @@ offset_left = 620.0
 offset_top = 1100.0
 offset_right = 700.0
 offset_bottom = 1180.0
+focus_mode = 0
 text = "⬇"
 
 [node name="SoftDropButton" type="Button" parent="UI/TouchControls"]
@@ -235,6 +239,7 @@ offset_left = 280.0
 offset_top = 1100.0
 offset_right = 460.0
 offset_bottom = 1180.0
+focus_mode = 0
 text = "HOLD ↓"
 
 [node name="PauseButton" type="Button" parent="UI/TouchControls"]
@@ -243,6 +248,7 @@ offset_left = 310.0
 offset_top = 1200.0
 offset_right = 410.0
 offset_bottom = 1260.0
+focus_mode = 0
 text = "⏸ PAUSE"
 
 [node name="PauseOverlay" type="ColorRect" parent="UI"]
@@ -284,6 +290,7 @@ offset_right = 100.0
 offset_bottom = 60.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 0
 text = "▶ RESUME"
 
 [node name="GameTimer" type="Timer" parent="."]
