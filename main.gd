@@ -67,6 +67,20 @@ var enemy_health = 100
 var enemy_max_health = 100
 var player_health = 100
 
+# Phase 1: Combat feedback systems
+var health_segments = []  # Array of ColorRect segments
+var damage_feed_entries = []  # Array of feed messages
+const MAX_FEED_ENTRIES = 8
+var game_time = 0.0
+
+# Circular timer progress
+var timer_progress_color = Color(0.3, 1, 0.3)  # Current timer color
+
+# Phase 2: Screen shake and floating damage
+var shake_amount = 0.0
+var shake_decay = 3.0  # How fast shake reduces (lower = lingers longer)
+var camera_original_offset = Vector2(360, 640)
+
 # Turn-based system
 var is_player_turn = true
 var turn_time_remaining = 30.0  # 30 seconds per turn
@@ -84,6 +98,7 @@ const SOFT_DROP_SPEED = 0.05  # How fast pieces fall when holding (very fast!)
 const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 
 # Node references (we'll get these in _ready)
+@onready var camera = $Camera
 @onready var grid_container = $TetrisArea/GridContainer
 @onready var score_label = $TetrisArea/ScoreLabel
 @onready var lines_label = $TetrisArea/LinesLabel
@@ -94,10 +109,13 @@ const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 @onready var game_timer = $GameTimer
 @onready var enemy_attack_timer = $EnemyAttackTimer
 @onready var turn_timer = $TurnTimer
-@onready var turn_timer_bar = $BattleArea/TurnTimerContainer/TurnTimerBar
+@onready var circular_progress = $BattleArea/TurnTimerContainer/CircularProgress
 @onready var turn_label = $BattleArea/TurnTimerContainer/TurnLabel
+@onready var timer_number = $BattleArea/TurnTimerContainer/TimerNumber
 @onready var fast_drop_timer = $FastDropTimer
 @onready var pause_overlay = $UI/PauseOverlay
+@onready var damage_feed_log = $UI/DamageFeedContainer/DamageFeedLog
+@onready var enemy_health_text = $BattleArea/Enemy/HealthText
 
 # These will hold the visual blocks we create
 var grid_blocks = []  # 2D array of ColorRect nodes for placed blocks
@@ -146,6 +164,28 @@ func _ready():
 	
 	# Update the UI
 	update_ui()
+
+	# Phase 1: Create segmented health bar
+	create_segmented_health_bar()
+
+	# Connect circular progress drawing
+	circular_progress.draw.connect(_draw_circular_timer)
+
+
+func _process(delta):
+	"""Track game time and update game state."""
+	if not game_over and not is_paused:
+		game_time += delta
+
+	# Phase 2: Handle screen shake
+	if shake_amount > 0:
+		shake_amount = max(0, shake_amount - shake_decay * delta)
+		camera.offset = camera_original_offset + Vector2(
+			randf_range(-shake_amount, shake_amount),
+			randf_range(-shake_amount, shake_amount)
+		)
+	else:
+		camera.offset = camera_original_offset
 
 
 func initialize_grid():
@@ -660,12 +700,35 @@ func calculate_damage(lines: int) -> int:
 
 func deal_damage_to_enemy(damage: int):
 	"""Deals damage to the enemy and triggers attack animation."""
+	# Apply damage
 	enemy_health = max(0, enemy_health - damage)
+
+	# Phase 1: Health bar flash effect
+	var flash_tween = create_tween()
+	flash_tween.set_parallel(true)
+	for segment in health_segments:
+		flash_tween.tween_property(segment, "modulate", Color(2, 2, 2), 0.05)
+	flash_tween.chain().tween_callback(update_health_bar_color.bind(enemy_health))
+
+	# Phase 1: Damage feed
+	var feed_msg = "%d damage" % damage
+	var is_combo = current_combo > 1
+	if is_combo:
+		feed_msg = "COMBO x%d! %d damage!" % [current_combo, damage]
+	add_damage_feed_entry(feed_msg, Color(1, 0.4, 0.2))
+
+	# Phase 2: Screen shake (intensity based on damage)
+	var shake_intensity = min(damage / 10.0, 15.0)
+	add_screen_shake(shake_intensity)
+
+	# Phase 2: Floating damage number at enemy position
+	var enemy_pos = $BattleArea/Enemy.position
+	spawn_floating_damage_number(damage, enemy_pos, is_combo)
+
+	# Existing logic
 	enemy_health_bar.value = enemy_health
-	
-	# Trigger player attack animation
 	play_attack_animation()
-	
+
 	# Check for enemy defeat
 	if enemy_health <= 0:
 		enemy_defeated()
@@ -675,17 +738,22 @@ func enemy_defeated():
 	"""Called when the enemy is defeated - VICTORY!"""
 	game_over = true
 	print("VICTORY! Enemy defeated!")
-	
+
 	# Stop all timers
 	game_timer.stop()
 	turn_timer.stop()
 	fast_drop_timer.stop()
-	
-	# Update turn label to show victory
-	turn_label.text = "VICTORY!"
-	turn_timer_bar.value = turn_timer_bar.max_value
-	turn_timer_bar.modulate = Color(1, 0.84, 0)  # Gold color
-	
+
+	# Update turn display to show victory
+	turn_label.text = "VICTORY"
+	timer_number.text = "★"
+	turn_time_remaining = TURN_DURATION  # Full circle for victory
+
+	# Gold color for victory
+	timer_progress_color = Color(1, 0.84, 0)
+	timer_number.modulate = Color(1, 0.84, 0)
+	circular_progress.queue_redraw()
+
 	# Victory animation - flash enemy red then fade out
 	var enemy_rect = $BattleArea/Enemy/EnemyPlaceholder
 	var tween = create_tween()
@@ -740,6 +808,205 @@ func update_ui():
 
 
 # ============================================
+# CIRCULAR TIMER DRAWING
+# ============================================
+
+func _draw_circular_timer():
+	"""Draws a circular progress ring for the turn timer."""
+	var center = Vector2(60, 60)  # Center of the 120x120 control
+	var radius = 50.0
+	var width = 8.0
+
+	# Calculate progress (0 to 1)
+	var progress = turn_time_remaining / TURN_DURATION
+
+	# Draw background ring (dark gray)
+	draw_arc_custom(circular_progress, center, radius, 0, TAU, Color(0.2, 0.2, 0.3, 0.5), width)
+
+	# Draw progress ring (colored, counter-clockwise from top)
+	# Start at -PI/2 (top) and go counter-clockwise
+	var start_angle = -PI / 2
+	var end_angle = start_angle + (TAU * progress)
+	draw_arc_custom(circular_progress, center, radius, start_angle, end_angle, timer_progress_color, width)
+
+
+func draw_arc_custom(control: Control, center: Vector2, radius: float, start_angle: float, end_angle: float, color: Color, width: float):
+	"""Draws a circular arc with the given parameters."""
+	var points_count = 64
+	var points = PackedVector2Array()
+
+	# Calculate the angle range
+	var angle_range = end_angle - start_angle
+	if angle_range < 0:
+		angle_range += TAU
+
+	# Generate points along the arc
+	for i in range(points_count + 1):
+		var angle = start_angle + (angle_range * i / points_count)
+		var point = center + Vector2(cos(angle), sin(angle)) * radius
+		points.append(point)
+
+	# Draw the arc as a polyline
+	for i in range(points.size() - 1):
+		control.draw_line(points[i], points[i + 1], color, width, true)
+
+
+# ============================================
+# PHASE 2: SCREEN SHAKE & FLOATING DAMAGE
+# ============================================
+
+func add_screen_shake(intensity: float):
+	"""Adds screen shake with the given intensity."""
+	shake_amount = min(shake_amount + intensity, 20.0)  # Cap at 20 pixels
+
+
+func spawn_floating_damage_number(damage: int, position: Vector2, is_combo: bool = false):
+	"""Spawns a floating damage number at the given position."""
+	var label = Label.new()
+
+	# Format text
+	if is_combo:
+		label.text = "x%d COMBO!\n%d" % [current_combo, damage]
+	else:
+		label.text = str(damage)
+
+	# Styling based on damage amount
+	var font_size = 24
+	var damage_color = Color(1, 1, 1)
+
+	if damage >= 80:  # Tetris or huge combo
+		font_size = 48
+		damage_color = Color(1, 0.3, 0.8)  # Magenta
+	elif damage >= 40:  # Triple or big combo
+		font_size = 36
+		damage_color = Color(1, 0.5, 0)  # Orange
+	elif damage >= 20:  # Double or small combo
+		font_size = 30
+		damage_color = Color(1, 1, 0)  # Yellow
+
+	if is_combo and current_combo > 1:
+		damage_color = Color(1, 0.2, 0.2)  # Red for combos
+		font_size += 8
+
+	label.add_theme_font_size_override("font_size", font_size)
+	label.modulate = damage_color
+	label.position = position
+	label.z_index = 100  # Draw on top
+
+	# Center the label
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size = Vector2(200, 100)
+	label.position.x -= 100
+	label.position.y -= 50
+
+	add_child(label)
+
+	# Animate: Float up and fade out (longer duration)
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", position.y - 100, 1.8)
+	tween.tween_property(label, "modulate:a", 0.0, 1.8).set_delay(0.5)  # Stay visible for 0.5s before fading
+	tween.tween_property(label, "scale", Vector2(1.3, 1.3), 0.4)
+
+	# Remove after animation
+	tween.chain().tween_callback(label.queue_free)
+
+
+# ============================================
+# PHASE 1: COMBAT FEEDBACK SYSTEMS
+# ============================================
+
+func create_segmented_health_bar():
+	"""Creates 10 segmented health bars (each = 10 HP)."""
+	# Clear existing segments
+	for segment in health_segments:
+		segment.queue_free()
+	health_segments.clear()
+
+	# Position at enemy health bar location
+	var enemy = $BattleArea/Enemy
+	var start_x = -50.0
+	var start_y = -90.0
+	var segment_width = 9.0
+	var segment_height = 10.0
+	var gap = 1.0
+
+	# Create 10 segments
+	for i in range(10):
+		var segment = ColorRect.new()
+		segment.size = Vector2(segment_width, segment_height)
+		segment.position = Vector2(start_x + i * (segment_width + gap), start_y)
+		segment.color = Color(0, 1, 0)  # Start green
+		enemy.add_child(segment)
+		health_segments.append(segment)
+
+	# Initial health bar update
+	update_health_bar_color(enemy_health)
+
+
+func update_health_bar_color(health: int):
+	"""Updates health bar segments with color gradient based on health."""
+	var segments_filled = int(ceil(health / 10.0))  # Each segment = 10 HP
+
+	# Determine color based on health percentage
+	var health_percent = float(health) / float(enemy_max_health) * 100.0
+	var bar_color = Color(0, 1, 0)  # Default green
+
+	if health_percent <= 25:
+		bar_color = Color(1, 0, 0)  # Red (0-25%)
+	elif health_percent <= 50:
+		bar_color = Color(1, 0.5, 0)  # Orange (25-50%)
+	elif health_percent <= 75:
+		bar_color = Color(1, 1, 0)  # Yellow (50-75%)
+
+	# Update each segment
+	for i in range(health_segments.size()):
+		if i < segments_filled:
+			health_segments[i].color = bar_color
+			health_segments[i].modulate = Color(1, 1, 1, 1)  # Visible
+		else:
+			health_segments[i].modulate = Color(1, 1, 1, 0.2)  # Dimmed
+
+	# Update health text
+	enemy_health_text.text = "%d/%d" % [health, enemy_max_health]
+
+
+func add_damage_feed_entry(message: String, color: Color = Color(1, 1, 1)):
+	"""Adds an entry to the damage feed console."""
+	var entry = {
+		"message": message,
+		"time": game_time,
+		"color": color
+	}
+
+	# Add to front of array
+	damage_feed_entries.insert(0, entry)
+
+	# Limit to MAX_FEED_ENTRIES
+	while damage_feed_entries.size() > MAX_FEED_ENTRIES:
+		damage_feed_entries.pop_back()
+
+	# Update display
+	update_damage_feed_display()
+
+
+func update_damage_feed_display():
+	"""Updates the visual display of the damage feed."""
+	# Clear all children
+	for child in damage_feed_log.get_children():
+		child.queue_free()
+
+	# Create label for each entry
+	for entry in damage_feed_entries:
+		var label = Label.new()
+		label.text = "[%ds] %s" % [int(entry.time), entry.message]
+		label.modulate = entry.color
+		label.add_theme_font_size_override("font_size", 14)
+		damage_feed_log.add_child(label)
+
+
+# ============================================
 # TIMER CALLBACKS
 # ============================================
 
@@ -761,21 +1028,31 @@ func _on_enemy_attack_timer_timeout():
 	"""Enemy attacks when their turn comes."""
 	if game_over:
 		return
-	
+
 	# Enemy deals damage to player
 	var enemy_damage = randi_range(5, 15)
 	player_health = max(0, player_health - enemy_damage)
-	
+
+	# Phase 1: Add enemy attack to damage feed
+	add_damage_feed_entry("Enemy dealt %d damage" % enemy_damage, Color(1, 1, 0.3))
+
+	# Phase 2: Screen shake for enemy attack
+	add_screen_shake(enemy_damage / 2.0)
+
+	# Phase 2: Floating damage number at player position
+	var player_pos = $BattleArea/Player.position
+	spawn_floating_damage_number(enemy_damage, player_pos, false)
+
 	play_enemy_attack_animation()
-	
+
 	# Flash player to show damage
 	var player_rect = $BattleArea/Player/PlayerPlaceholder
 	var tween = create_tween()
 	tween.tween_property(player_rect, "color", Color(1, 0, 0), 0.1)
 	tween.tween_property(player_rect, "color", Color(0.2, 0.6, 1), 0.1)
-	
+
 	print("Enemy dealt " + str(enemy_damage) + " damage! Player health: " + str(player_health))
-	
+
 	if player_health <= 0:
 		game_over = true
 		print("Player defeated! GAME OVER!")
@@ -807,14 +1084,15 @@ func start_player_turn():
 	is_player_turn = true
 	enemy_attack_phase = false
 	turn_time_remaining = TURN_DURATION
-	
+
 	# Update display
+	turn_label.text = "YOUR TURN"
 	update_turn_timer_display()
-	
+
 	# Make sure timers are running correctly
 	game_timer.start()  # Tetris pieces fall
 	turn_timer.start()  # Turn countdown
-	
+
 	print("Player turn started! You have " + str(TURN_DURATION) + " seconds.")
 
 
@@ -822,39 +1100,48 @@ func end_player_turn():
 	"""Ends the player's turn and triggers enemy attack."""
 	is_player_turn = false
 	enemy_attack_phase = true
-	
+
 	# Update display to show enemy turn
-	turn_label.text = "ENEMY TURN!"
-	turn_timer_bar.value = 0
-	
-	# Change bar color to red during enemy turn
-	turn_timer_bar.modulate = Color(1, 0.3, 0.3)
-	
+	turn_label.text = "ENEMY TURN"
+	timer_number.text = "!"
+	turn_time_remaining = 0
+
+	# Change color to red during enemy turn
+	timer_progress_color = Color(1, 0.3, 0.3)
+	timer_number.modulate = Color(1, 0.3, 0.3)
+	circular_progress.queue_redraw()
+
 	# Pause the Tetris game during enemy attack
 	game_timer.stop()
 	turn_timer.stop()
-	
+
 	print("Player turn ended! Enemy is attacking...")
-	
+
 	# Delay before enemy attacks (for dramatic effect)
 	await get_tree().create_timer(0.5).timeout
-	
+
 	# Trigger enemy attack
 	_on_enemy_attack_timer_timeout()
 
 
 func update_turn_timer_display():
-	"""Updates the turn timer bar and label."""
-	turn_timer_bar.value = turn_time_remaining
-	turn_label.text = "YOUR TURN - " + str(int(turn_time_remaining)) + "s"
-	
+	"""Updates the circular turn timer display."""
+	timer_number.text = str(int(turn_time_remaining))
+	turn_label.text = "YOUR TURN"
+
 	# Change color based on time remaining
 	if turn_time_remaining > 20:
-		turn_timer_bar.modulate = Color(0.3, 1, 0.3)  # Green - plenty of time
+		timer_progress_color = Color(0.3, 1, 0.3)  # Green - plenty of time
+		timer_number.modulate = Color(0.3, 1, 0.3)
 	elif turn_time_remaining > 10:
-		turn_timer_bar.modulate = Color(1, 1, 0.3)  # Yellow - getting low
+		timer_progress_color = Color(1, 1, 0.3)  # Yellow - getting low
+		timer_number.modulate = Color(1, 1, 0.3)
 	else:
-		turn_timer_bar.modulate = Color(1, 0.3, 0.3)  # Red - urgent!
+		timer_progress_color = Color(1, 0.3, 0.3)  # Red - urgent!
+		timer_number.modulate = Color(1, 0.3, 0.3)
+
+	# Redraw the circular progress
+	circular_progress.queue_redraw()
 
 
 # ============================================
