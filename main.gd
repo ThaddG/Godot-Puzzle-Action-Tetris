@@ -103,6 +103,7 @@ const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 var grid_blocks = []  # 2D array of ColorRect nodes for placed blocks
 var current_piece_visuals = []  # Array of ColorRect nodes for falling piece
 var next_piece_visuals = []  # Array of ColorRect nodes for next piece preview
+var ghost_piece_visuals = []  # Array of ColorRect nodes for ghost/shadow piece
 
 
 # ============================================
@@ -230,7 +231,7 @@ func update_current_piece_visuals():
 	for block in current_piece_visuals:
 		block.queue_free()
 	current_piece_visuals.clear()
-	
+
 	# Create new visuals for each block in the piece
 	var color = PIECE_COLORS[current_piece_type]
 	for block_offset in current_piece_blocks:
@@ -242,6 +243,9 @@ func update_current_piece_visuals():
 		grid_container.add_child(block)
 		current_piece_visuals.append(block)
 
+	# Also update the ghost piece
+	update_ghost_piece()
+
 
 func update_next_piece_preview():
 	"""Updates the "next piece" preview box."""
@@ -249,14 +253,14 @@ func update_next_piece_preview():
 	for block in next_piece_visuals:
 		block.queue_free()
 	next_piece_visuals.clear()
-	
+
 	# Get the next piece container
 	var preview_box = $TetrisArea/NextPieceBox
-	
+
 	# Create blocks for preview
 	var color = PIECE_COLORS[next_piece_type]
 	var blocks = TETROMINOS[next_piece_type]
-	
+
 	for block_offset in blocks:
 		var block = ColorRect.new()
 		block.size = Vector2(25, 25)  # Smaller for preview
@@ -265,6 +269,36 @@ func update_next_piece_preview():
 		block.color = color
 		preview_box.add_child(block)
 		next_piece_visuals.append(block)
+
+
+func update_ghost_piece():
+	"""Updates the ghost/shadow piece showing where the current piece will land."""
+	# Remove old ghost visuals
+	for block in ghost_piece_visuals:
+		block.queue_free()
+	ghost_piece_visuals.clear()
+
+	# Calculate ghost position (drop straight down until collision)
+	var ghost_y = current_piece_position.y
+	while can_move_to(Vector2(current_piece_position.x, ghost_y + 1)):
+		ghost_y += 1
+
+	# Don't show ghost if piece is already at landing position
+	if ghost_y == current_piece_position.y:
+		return
+
+	# Create ghost visuals (semi-transparent version of current piece)
+	var color = PIECE_COLORS[current_piece_type]
+	color.a = 0.3  # Make it semi-transparent
+
+	for block_offset in current_piece_blocks:
+		var block = ColorRect.new()
+		block.size = Vector2(CELL_SIZE - 2, CELL_SIZE - 2)
+		var pos = Vector2(current_piece_position.x, ghost_y) + block_offset
+		block.position = Vector2(pos.x * CELL_SIZE + 1, pos.y * CELL_SIZE + 1)
+		block.color = color
+		grid_container.add_child(block)
+		ghost_piece_visuals.append(block)
 
 
 # ============================================
@@ -387,11 +421,16 @@ func lock_piece():
 	if is_locking_piece:
 		return
 	is_locking_piece = true
-	
+
 	# IMMEDIATELY clear the falling piece visuals so they don't ghost
 	for block in current_piece_visuals:
 		block.queue_free()
 	current_piece_visuals.clear()
+
+	# Also clear ghost piece visuals
+	for block in ghost_piece_visuals:
+		block.queue_free()
+	ghost_piece_visuals.clear()
 	
 	var color = PIECE_COLORS[current_piece_type]
 	
