@@ -96,23 +96,23 @@ offset_right = 605.0
 offset_bottom = 53.0
 color = Color(0.1, 0.1, 0.15, 0.8)
 
-[node name="TetrisArea" type="Node2D" parent="."]
+[node name="PuzzleArea" type="Node2D" parent="."]
 position = Vector2(0, 420)
 
-[node name="TetrisBackground" type="ColorRect" parent="TetrisArea"]
+[node name="PuzzleBackground" type="ColorRect" parent="PuzzleArea"]
 offset_right = 720.0
 offset_bottom = 860.0
 color = Color(0.05, 0.05, 0.1, 1)
 
-[node name="GridContainer" type="Node2D" parent="TetrisArea"]
+[node name="GridContainer" type="Node2D" parent="PuzzleArea"]
 position = Vector2(110, 30)
 
-[node name="GridBackground" type="ColorRect" parent="TetrisArea/GridContainer"]
+[node name="GridBackground" type="ColorRect" parent="PuzzleArea/GridContainer"]
 offset_right = 300.0
 offset_bottom = 600.0
 color = Color(0.02, 0.02, 0.05, 1)
 
-[node name="GridBorder" type="ReferenceRect" parent="TetrisArea/GridContainer"]
+[node name="GridBorder" type="ReferenceRect" parent="PuzzleArea/GridContainer"]
 offset_left = -2.0
 offset_top = -2.0
 offset_right = 302.0
@@ -120,7 +120,7 @@ offset_bottom = 602.0
 border_color = Color(0.5, 0.5, 0.6, 1)
 border_width = 2.0
 
-[node name="NextPieceLabel" type="Label" parent="TetrisArea"]
+[node name="NextPieceLabel" type="Label" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 30.0
 offset_right = 620.0
@@ -128,35 +128,35 @@ offset_bottom = 60.0
 text = "NEXT PIECE"
 horizontal_alignment = 1
 
-[node name="NextPieceBox" type="ColorRect" parent="TetrisArea"]
+[node name="NextPieceBox" type="ColorRect" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 70.0
 offset_right = 620.0
 offset_bottom = 220.0
 color = Color(0.02, 0.02, 0.05, 1)
 
-[node name="ScoreLabel" type="Label" parent="TetrisArea"]
+[node name="ScoreLabel" type="Label" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 250.0
 offset_right = 620.0
 offset_bottom = 280.0
 text = "SCORE: 0"
 
-[node name="LinesLabel" type="Label" parent="TetrisArea"]
+[node name="LinesLabel" type="Label" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 290.0
 offset_right = 620.0
 offset_bottom = 320.0
 text = "LINES: 0"
 
-[node name="DamageLabel" type="Label" parent="TetrisArea"]
+[node name="DamageLabel" type="Label" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 330.0
 offset_right = 620.0
 offset_bottom = 360.0
 text = "DAMAGE: 0"
 
-[node name="ComboLabel" type="Label" parent="TetrisArea"]
+[node name="ComboLabel" type="Label" parent="PuzzleArea"]
 offset_left = 450.0
 offset_top = 380.0
 offset_right = 620.0
@@ -164,7 +164,7 @@ offset_bottom = 420.0
 theme_override_font_sizes/font_size = 24
 horizontal_alignment = 1
 
-[node name="ComboContainer" type="Control" parent="TetrisArea"]
+[node name="ComboContainer" type="Control" parent="PuzzleArea"]
 layout_mode = 3
 anchors_preset = 0
 offset_left = 450.0
@@ -172,13 +172,13 @@ offset_top = 430.0
 offset_right = 620.0
 offset_bottom = 530.0
 
-[node name="ComboBackground" type="ColorRect" parent="TetrisArea/ComboContainer"]
+[node name="ComboBackground" type="ColorRect" parent="PuzzleArea/ComboContainer"]
 layout_mode = 0
 offset_right = 170.0
 offset_bottom = 100.0
 color = Color(0.02, 0.02, 0.05, 1)
 
-[node name="ComboMultiplier" type="Label" parent="TetrisArea/ComboContainer"]
+[node name="ComboMultiplier" type="Label" parent="PuzzleArea/ComboContainer"]
 layout_mode = 0
 offset_right = 170.0
 offset_bottom = 100.0

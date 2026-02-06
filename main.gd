@@ -1,24 +1,24 @@
 extends Node2D
 
 # ============================================
-# TETRIS BATTLE GAME - MAIN SCRIPT
+# BLOCK BATTLE GAME - MAIN SCRIPT
 # ============================================
 # This script controls the entire game:
-# - Tetris grid and piece movement
+# - Puzzle grid and piece movement
 # - Battle system (damaging enemy when clearing lines)
 # - Touch controls for mobile
 # ============================================
 
 # --- CONSTANTS (values that never change) ---
 
-# Grid dimensions (standard Tetris is 10 wide, 20 tall)
+# Grid dimensions (10 wide, 20 tall)
 const GRID_WIDTH = 10
 const GRID_HEIGHT = 20
 const CELL_SIZE = 30  # Each cell is 30x30 pixels
 
-# All 7 Tetris pieces (called Tetrominoes)
+# All 7 block pieces (polyominoes)
 # Each piece is defined by 4 block positions relative to center
-const TETROMINOS = {
+const PIECES = {
 	"I": [Vector2(-1, 0), Vector2(0, 0), Vector2(1, 0), Vector2(2, 0)],
 	"O": [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)],
 	"T": [Vector2(-1, 0), Vector2(0, 0), Vector2(1, 0), Vector2(0, 1)],
@@ -84,12 +84,12 @@ const SOFT_DROP_SPEED = 0.05  # How fast pieces fall when holding (very fast!)
 const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 
 # Node references (we'll get these in _ready)
-@onready var grid_container = $TetrisArea/GridContainer
-@onready var score_label = $TetrisArea/ScoreLabel
-@onready var lines_label = $TetrisArea/LinesLabel
-@onready var damage_label = $TetrisArea/DamageLabel
-@onready var combo_label = $TetrisArea/ComboLabel
-@onready var combo_multiplier_label = $TetrisArea/ComboContainer/ComboMultiplier
+@onready var grid_container = $PuzzleArea/GridContainer
+@onready var score_label = $PuzzleArea/ScoreLabel
+@onready var lines_label = $PuzzleArea/LinesLabel
+@onready var damage_label = $PuzzleArea/DamageLabel
+@onready var combo_label = $PuzzleArea/ComboLabel
+@onready var combo_multiplier_label = $PuzzleArea/ComboContainer/ComboMultiplier
 @onready var enemy_health_bar = $BattleArea/Enemy/EnemyHealthBar
 @onready var game_timer = $GameTimer
 @onready var enemy_attack_timer = $EnemyAttackTimer
@@ -140,7 +140,7 @@ func _ready():
 	
 	# Manually set up the first piece (don't use spawn_new_piece which would regenerate next)
 	current_piece_type = first_piece
-	current_piece_blocks = TETROMINOS[current_piece_type].duplicate()
+	current_piece_blocks = PIECES[current_piece_type].duplicate()
 	current_piece_position = Vector2(4, 0)
 	update_current_piece_visuals()
 	update_next_piece_preview()
@@ -201,7 +201,7 @@ func connect_buttons():
 
 func get_random_piece_type() -> String:
 	"""Returns a random piece type (I, O, T, S, Z, J, or L)."""
-	var types = TETROMINOS.keys()  # Get all piece names
+	var types = PIECES.keys()  # Get all piece names
 	return types[randi() % types.size()]  # Pick random one
 
 
@@ -213,7 +213,7 @@ func spawn_new_piece():
 	next_piece_type = get_random_piece_type()
 	
 	# Copy the piece shape (we copy so we can rotate without affecting original)
-	current_piece_blocks = TETROMINOS[current_piece_type].duplicate()
+	current_piece_blocks = PIECES[current_piece_type].duplicate()
 	
 	# Start at top-center of grid
 	current_piece_position = Vector2(4, 0)
@@ -261,11 +261,11 @@ func update_next_piece_preview():
 	next_piece_visuals.clear()
 
 	# Get the next piece container
-	var preview_box = $TetrisArea/NextPieceBox
+	var preview_box = $PuzzleArea/NextPieceBox
 
 	# Create blocks for preview
 	var color = PIECE_COLORS[next_piece_type]
-	var blocks = TETROMINOS[next_piece_type]
+	var blocks = PIECES[next_piece_type]
 
 	for block_offset in blocks:
 		var block = ColorRect.new()
@@ -624,7 +624,7 @@ func play_combo_effect():
 	tween.tween_property(combo_multiplier_label, "scale", Vector2(1, 1), 0.2)
 	
 	# Flash the grid with combo color
-	var grid_bg = $TetrisArea/GridContainer/GridBackground
+	var grid_bg = $PuzzleArea/GridContainer/GridBackground
 	var flash_tween = create_tween()
 	var flash_color = Color(0.5, 0.3, 0.1) if current_combo >= 3 else Color(0.3, 0.3, 0.1)
 	flash_tween.tween_property(grid_bg, "color", flash_color, 0.1)
@@ -650,12 +650,12 @@ func update_grid_visuals():
 # ============================================
 
 func calculate_score(lines: int) -> int:
-	"""Calculates score based on lines cleared (Tetris scoring)."""
+	"""Calculates score based on lines cleared."""
 	match lines:
 		1: return 100
 		2: return 300
 		3: return 500
-		4: return 800  # Tetris!
+		4: return 800  # Full clear!
 		_: return 0
 
 
@@ -665,7 +665,7 @@ func calculate_damage(lines: int) -> int:
 		1: return 10
 		2: return 25
 		3: return 40
-		4: return 80  # Tetris does massive damage!
+		4: return 80  # Full clear does massive damage!
 		_: return 0
 
 
@@ -735,7 +735,7 @@ func play_line_clear_effect():
 	"""Visual effect when lines are cleared."""
 	# Flash the grid
 	var tween = create_tween()
-	var grid_bg = $TetrisArea/GridContainer/GridBackground
+	var grid_bg = $PuzzleArea/GridContainer/GridBackground
 	tween.tween_property(grid_bg, "color", Color(0.3, 0.3, 0.4), 0.1)
 	tween.tween_property(grid_bg, "color", Color(0.02, 0.02, 0.05), 0.1)
 
@@ -825,7 +825,7 @@ func start_player_turn():
 	update_turn_timer_display()
 	
 	# Make sure timers are running correctly
-	game_timer.start()  # Tetris pieces fall
+	game_timer.start()  # Pieces fall
 	turn_timer.start()  # Turn countdown
 	
 	print("Player turn started! You have " + str(TURN_DURATION) + " seconds.")
@@ -843,7 +843,7 @@ func end_player_turn():
 	# Change bar color to red during enemy turn
 	turn_timer_bar.modulate = Color(1, 0.3, 0.3)
 	
-	# Pause the Tetris game during enemy attack
+	# Pause the puzzle game during enemy attack
 	game_timer.stop()
 	turn_timer.stop()
 	
