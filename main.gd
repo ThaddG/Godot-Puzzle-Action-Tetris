@@ -278,6 +278,11 @@ func update_ghost_piece():
 		block.queue_free()
 	ghost_piece_visuals.clear()
 
+	# Skip if ghost piece is disabled in settings
+	var settings = get_node_or_null("/root/GameSettings")
+	if settings and not settings.ghost_piece_enabled:
+		return
+
 	# Calculate ghost position (drop straight down until collision)
 	var ghost_y = current_piece_position.y
 	while can_move_to(Vector2(current_piece_position.x, ghost_y + 1)):
