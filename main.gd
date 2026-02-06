@@ -98,6 +98,7 @@ const NORMAL_DROP_SPEED = 0.5  # Normal fall speed
 @onready var turn_label = $BattleArea/TurnTimerContainer/TurnLabel
 @onready var fast_drop_timer = $FastDropTimer
 @onready var pause_overlay = $UI/PauseOverlay
+@onready var game_over_overlay = $UI/GameOverOverlay
 
 # These will hold the visual blocks we create
 var grid_blocks = []  # 2D array of ColorRect nodes for placed blocks
@@ -188,6 +189,10 @@ func connect_buttons():
 	# Pause buttons
 	$UI/TouchControls/PauseButton.pressed.connect(toggle_pause)
 	$UI/PauseOverlay/ResumeButton.pressed.connect(toggle_pause)
+	
+	# Game over buttons
+	$UI/GameOverOverlay/RestartButton.pressed.connect(_on_restart_pressed)
+	$UI/GameOverOverlay/HomeButton.pressed.connect(_on_home_pressed)
 
 
 # ============================================
@@ -218,6 +223,7 @@ func spawn_new_piece():
 		game_over = true
 		print("GAME OVER!")
 		game_timer.stop()
+		show_game_over_screen(false)
 		return
 	
 	# Create visual representation of the piece
@@ -696,7 +702,8 @@ func enemy_defeated():
 	var tween = create_tween()
 	tween.tween_property(enemy_rect, "color", Color(1, 1, 1), 0.1)
 	tween.tween_property(enemy_rect, "color", Color(0.5, 0, 0), 0.2)
-	tween.tween_property(enemy_rect, "modulate:a", 0.0, 0.5)  # Fade out
+	tween.tween_property(enemy_rect, "modulate:a", 0.0, 0.5)
+	tween.tween_callback(show_game_over_screen.bind(true))
 
 
 # ============================================
@@ -786,6 +793,7 @@ func _on_enemy_attack_timer_timeout():
 		print("Player defeated! GAME OVER!")
 		game_timer.stop()
 		turn_timer.stop()
+		show_game_over_screen(false)
 	else:
 		# After enemy attacks, give turn back to player
 		start_player_turn()
@@ -973,3 +981,27 @@ func toggle_pause():
 		pause_overlay.visible = false
 		
 		print("Game resumed")
+
+
+func show_game_over_screen(is_victory: bool):
+	"""Shows the game over overlay with result and score."""
+	var label = $UI/GameOverOverlay/GameOverLabel
+	var score_result = $UI/GameOverOverlay/ScoreResultLabel
+	
+	if is_victory:
+		label.text = "VICTORY!"
+	else:
+		label.text = "GAME OVER"
+	
+	score_result.text = "SCORE: " + str(score) + "\nLINES: " + str(lines_cleared)
+	game_over_overlay.visible = true
+
+
+func _on_restart_pressed():
+	"""Restarts the game."""
+	get_tree().reload_current_scene()
+
+
+func _on_home_pressed():
+	"""Returns to the home screen."""
+	get_tree().change_scene_to_file("res://home.tscn")
